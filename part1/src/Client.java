@@ -1,51 +1,59 @@
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.SocketTimeoutException;
 import java.nio.*;
+import java.util.Arrays;
 
 public class Client {
     private String hostName;
-    private int portNumber;
 
-    public Client(String hostName, int portNumber) {
+    public Client(String hostName) {
         this.hostName = hostName;
-        this.portNumber = portNumber;
     }
 
-    public byte[] FormatMessage(String data, int pSecret, short step, short SSN) {
-        int length = data.length();
-        ByteBuffer message = ByteBuffer.allocate(12 + data.length() + 4 - data.length() % 4);
+    public ByteBuffer FormatHeader(int length, int pSecret, short step, short SSN) {
+        ByteBuffer message = length % 4 == 0 ? ByteBuffer.allocate((12 + length)) :
+                ByteBuffer.allocate(12 + length + 4 - length % 4);
         message.order( ByteOrder.BIG_ENDIAN);
-        message.putInt(data.length() + 1);
+        message.putInt(length);
         message.putInt(pSecret);
         message.putShort(step);
         message.putShort(SSN);
-        for(int i = 0; i < data.length(); i++) {
-            message.put((byte) (data.charAt(i) & 0xFF));
-        }
-        message.put((byte) ('\0' & 0xFF));
-        return message.array();
+        return message;
     }
 
-    public byte[] SendUDP(byte[] message) {
-
+    public byte[] SendUDP(byte[] message, int portNumber, int count) {
         try {
-            DatagramSocket clientSocket = new DatagramSocket();
-            InetAddress IPAddress = InetAddress.getByName(hostName);
-            DatagramPacket sendPacket = new DatagramPacket(message, message.length, IPAddress, portNumber);
-            clientSocket.send(sendPacket);
+            System.out.println("Sending UDP Packet to: " + hostName + " (Port: " + portNumber + ")");
+            System.out.println("Packet: " + Arrays.toString(message));
 
+            DatagramSocket clientSocket = new DatagramSocket();
+            clientSocket.setSoTimeout(1000);
+            InetAddress IPAddress = InetAddress.getByName(hostName);
             byte[] receiveData = new byte[1024];
-            DatagramPacket receivePacket =  new DatagramPacket(receiveData, receiveData.length);
-            clientSocket.receive(receivePacket);
-            clientSocket.close();
-            return receiveData;
-        } catch (Exception e) {
+
+            DatagramPacket sendPacket = new DatagramPacket(message, message.length, IPAddress, portNumber);
+            DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+
+            while (true) {
+                try {
+                    for(int i = 0; i <= count; i++)
+                        clientSocket.receive(receivePacket);
+                    clientSocket.close();
+                    return receiveData;
+                } catch (SocketTimeoutException e) {
+                    clientSocket.send(sendPacket);
+                    continue;
+                }
+            }
+
+        } catch(Exception e){
             System.out.println(e.getMessage());
             return null;
         }
-
     }
 }
+
 
 
