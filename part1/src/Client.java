@@ -1,9 +1,8 @@
-import java.io.*;
-import java.net.Socket;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.nio.*;
 
-/**
- * Created by Damir Zhaksilikov on 1/16/2017.
- */
 public class Client {
     private String hostName;
     private int portNumber;
@@ -13,23 +12,40 @@ public class Client {
         this.portNumber = portNumber;
     }
 
-    public String FormatData(String data, int pSecret, int step, int SSN) throws UnsupportedEncodingException {
-        byte[] bytes = data.getBytes("UTF-8");
-        int length = bytes.length;
-        return null;
+    public byte[] FormatMessage(String data, int pSecret, short step, short SSN) {
+        int length = data.length();
+        ByteBuffer message = ByteBuffer.allocate(12 + data.length() + 4 - data.length() % 4);
+        message.order( ByteOrder.BIG_ENDIAN);
+        message.putInt(data.length() + 1);
+        message.putInt(pSecret);
+        message.putShort(step);
+        message.putShort(SSN);
+        for(int i = 0; i < data.length(); i++) {
+            message.put((byte) (data.charAt(i) & 0xFF));
+        }
+        message.put((byte) ('\0' & 0xFF));
+        return message.array();
     }
 
-    public void Write(String data) {
-        try {
-            Socket echoSocket = new Socket(hostName, portNumber);
-            PrintWriter out = new PrintWriter(echoSocket.getOutputStream(), true);
-            BufferedReader in = new BufferedReader(new InputStreamReader(echoSocket.getInputStream()));
-            String userInput;
-            out.println(data);
-            System.out.println(in.readLine());
+    public byte[] SendUDP(byte[] message) {
 
+        try {
+            DatagramSocket clientSocket = new DatagramSocket();
+            InetAddress IPAddress = InetAddress.getByName(hostName);
+            DatagramPacket sendPacket = new DatagramPacket(message, message.length, IPAddress, portNumber);
+            clientSocket.send(sendPacket);
+
+            byte[] receiveData = new byte[1024];
+            DatagramPacket receivePacket =  new DatagramPacket(receiveData, receiveData.length);
+            clientSocket.receive(receivePacket);
+            clientSocket.close();
+            return receiveData;
         } catch (Exception e) {
+            System.out.println(e.getMessage());
+            return null;
         }
 
     }
 }
+
+
