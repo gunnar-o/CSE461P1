@@ -1,15 +1,19 @@
+import java.io.IOException;
 import java.net.DatagramPacket;
+import java.net.ServerSocket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
+import java.util.Random;
 
 public class ServerMain {
 
 
-	public static void main(String[] args) throws SocketException {
+	public static void main(String[] args) throws Exception {
 
 		Server server = new Server();
 		int[] udpPacket = stageA(server);
-		stageB(server, udpPacket);
+		ByteBuffer lastUDPMessage = stageB(server, udpPacket);
+		stageC(server, lastUDPMessage);
 	}
 
 	// Returns a 4-integer array representing the udp packet sent
@@ -28,14 +32,18 @@ public class ServerMain {
 		}
 	}
 	
-	public static void stageB(Server server, int[] udpPacket) {
+	public static ByteBuffer stageB(Server server, int[] udpPacket) throws IOException {
 		System.out.println("---- Starting Stage B ----");
+		System.out.println("UDP Packet ints: " + udpPacket[0] + " " + udpPacket[1] + " " + udpPacket[2] + " " + udpPacket[3]);
+		boolean failedToAck = false;	// ensure that we don't acknowledge at least once
+		Server.Header finalUDPHeader = null;
+		DatagramPacket receivedPacket = null;
 		for (int i = 0; i < udpPacket[0]; i++) {
-			DatagramPacket receivedPacket = server.receiveData(udpPacket[2]);
+			receivedPacket = server.receiveData(udpPacket[2]);
 			ByteBuffer receivedData = ByteBuffer.wrap(receivedPacket.getData());
-			if ((int)(Math.random() * 10) % 2 == 0) {
+			int packetId = ByteBuffer.wrap(receivedPacket.getData()).getInt(Server.Header.HEADER_LENGTH);
+			if ((int)(Math.random() * 10) % 2 == 0 || !failedToAck) {
 				// Randomly choose to ack a packet
-				int packetId = ByteBuffer.wrap(receivedPacket.getData()).getInt(Server.Header.HEADER_LENGTH);
 				Server.Header header = server.new Header(4, receivedData.getInt(4), receivedData.getShort(8), Server.Header.LAST_3_SSN);
 				ByteBuffer ackMessage = ByteBuffer.allocate(Server.Header.HEADER_LENGTH + header.payloadLen);
 				header.addToBuffer(ackMessage);
@@ -43,11 +51,35 @@ public class ServerMain {
 				System.out.println("Sending ack packet id: " + packetId);
 				server.sendData(ackMessage.array(), receivedPacket.getAddress(), receivedPacket.getPort());
 			} else {
-				System.out.println("Ignoring packet -- waiting for another");
+				System.out.println("Ignoring packet " + packetId + " -- waiting for another");
 				i--;
+				failedToAck = true;
+			}
+			if (finalUDPHeader == null) {
+				finalUDPHeader = server.new Header(8, receivedData.getInt(4), (short) 2, Server.Header.LAST_3_SSN);
 			}
 		}
+		if (receivedPacket == null || finalUDPHeader == null) throw new IllegalStateException("Didn't process any udp packets");
 		System.out.println("Acknowledged all " + udpPacket[0] + " packets.");
+		
+		// Step b2 -- Send TCP port number & secret B
+		ByteBuffer tcpPortMessage = ByteBuffer.allocate(Server.Header.HEADER_LENGTH + finalUDPHeader.payloadLen);
+		finalUDPHeader.addToBuffer(tcpPortMessage);
+		ServerSocket temp = new ServerSocket(0);
+		int tcpPort = temp.getLocalPort();
+		System.out.println("tcpPort = " + tcpPort );
+		tcpPortMessage.putInt(tcpPort);
+		temp.close();
+		tcpPortMessage.putInt(new Random().nextInt());	// Generate random secretB
+		server.sendData(tcpPortMessage.array(), receivedPacket.getAddress(), receivedPacket.getPort());
+		return tcpPortMessage;
+	}
+	
+	public static void stageC(Server server, ByteBuffer lastUDPMessage) {
+		System.out.println("\n---- Starting Stage C ----");
+		int tcpPort = lastUDPMessage.getInt(Server.Header.HEADER_LENGTH);
+		System.out.println("Waiting on TCP port " + tcpPort);
+		
 	}
 
 }
