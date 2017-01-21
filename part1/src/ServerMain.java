@@ -3,6 +3,7 @@ import java.net.DatagramPacket;
 import java.net.ServerSocket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Random;
 
 public class ServerMain {
@@ -13,7 +14,8 @@ public class ServerMain {
 		Server server = new Server();
 		int[] udpPacket = stageA(server);
 		ByteBuffer lastUDPMessage = stageB(server, udpPacket);
-		stageC(server, lastUDPMessage);
+		ByteBuffer firstTCPMessage = stageC(server, lastUDPMessage);
+		stageD(server, firstTCPMessage);
 	}
 
 	// Returns a 4-integer array representing the udp packet sent
@@ -67,19 +69,67 @@ public class ServerMain {
 		finalUDPHeader.addToBuffer(tcpPortMessage);
 		ServerSocket temp = new ServerSocket(0);
 		int tcpPort = temp.getLocalPort();
-		System.out.println("tcpPort = " + tcpPort );
+		System.out.println("tcpPort = " + tcpPort);
 		tcpPortMessage.putInt(tcpPort);
 		temp.close();
-		tcpPortMessage.putInt(new Random().nextInt());	// Generate random secretB
+		int secretB = 22222;//new Random().nextInt();
+		tcpPortMessage.putInt(secretB);	// Generate random secretB
 		server.sendData(tcpPortMessage.array(), receivedPacket.getAddress(), receivedPacket.getPort());
 		return tcpPortMessage;
 	}
 	
-	public static void stageC(Server server, ByteBuffer lastUDPMessage) {
+	public static ByteBuffer stageC(Server server, ByteBuffer lastUDPMessage) throws IOException {
 		System.out.println("\n---- Starting Stage C ----");
 		int tcpPort = lastUDPMessage.getInt(Server.Header.HEADER_LENGTH);
-		System.out.println("Waiting on TCP port " + tcpPort);
+		ServerSocket serverSocket = new ServerSocket(tcpPort);
+		server.openTCP(serverSocket);
+		Server.Header c2Header = server.new Header(13, lastUDPMessage.getInt(4), (short)2, Server.Header.LAST_3_SSN);
+		int packetLenNoPadding = Server.Header.HEADER_LENGTH + c2Header.payloadLen;
+		ByteBuffer c2Message = ByteBuffer.allocate(packetLenNoPadding + 3);
+		c2Header.addToBuffer(c2Message);
+		Random r = new Random();
+		int num2 = (r.nextInt(5)) + 1;
+		int len2 = (r.nextInt(4) + 1) * 4; // Randomly choose 4, 8, 12, or 16
+		int secretC = 333333;//r.nextInt();
+		char c = (char) (r.nextInt('~' - 'A') + 'A');
+		c2Message.putInt(num2);
+		c2Message.putInt(len2);
+		c2Message.putInt(secretC);
+		c2Message.put((byte) (c & 0xFF));
+		System.out.println("Sending c2 packet: " + num2 + " " + len2 + " " + secretC + " " + c);
+		System.out.println(Arrays.toString(c2Message.array()));
+		server.sendTCP(c2Message.array());
+		return c2Message;
+	}
+	
+	public static void stageD(Server server, ByteBuffer firstTCPMessage) {
+		System.out.println("\n---- Starting Stage D ----");
+		int num2 = firstTCPMessage.getInt(Server.Header.HEADER_LENGTH);
+		int len2 = firstTCPMessage.getInt(Server.Header.HEADER_LENGTH + Integer.SIZE / 8);
+		byte c = firstTCPMessage.get(Server.Header.HEADER_LENGTH + 3 * (Integer.SIZE / 8));
 		
+		// Receive the character packets and verify
+		System.out.println("Verifying characters...");
+		for (int i = 0; i < num2; i++) {
+			byte[] message = server.readTCP(Server.Header.HEADER_LENGTH + len2);
+			System.out.println("Read char message: " + Arrays.toString(message));
+			for (int j = Server.Header.HEADER_LENGTH; j < message.length; j++) {
+				// Check all of the character bytes in the packet are the correct character c
+				if (message[Server.Header.HEADER_LENGTH + i] != c) throw new IllegalStateException("Character incorrect in packet @" + j);
+			}
+		}
+		System.out.println("Character verification complete.");
+		
+		// Send the packet with secretD
+		Server.Header d2Header = server.new Header(4, firstTCPMessage.getInt(4), (short)2, Server.Header.LAST_3_SSN);
+		ByteBuffer d2Message = ByteBuffer.allocate(Server.Header.HEADER_LENGTH + d2Header.payloadLen);
+		d2Header.addToBuffer(d2Message);
+		int secretD = 44444;//new Random().nextInt();
+		d2Message.putInt(secretD);
+		System.out.println("Sending d2 packet: " + secretD);
+		System.out.println(Arrays.toString(d2Message.array()));
+		server.sendTCP(d2Message.array());
+		server.closeTCP();
 	}
 
 }

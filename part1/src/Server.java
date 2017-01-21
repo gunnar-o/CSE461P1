@@ -1,18 +1,23 @@
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.Random;
 
 public class Server extends Thread {
 	
 	public static final int TIMEOUT = 3000;
 	public static final int PORT_NUMBER = 12235;
-	public static final String HOST_NAME = "localhost";
 	
+	private Socket tcpSocket;
 	
 	public DatagramPacket receiveData(int port) {
 		try {
@@ -79,7 +84,7 @@ public class Server extends Thread {
 		DatagramSocket temp = new DatagramSocket();
 		int udpPort = temp.getLocalPort();
 		temp.close();
-		int secretA = r.nextInt();
+		int secretA = 11111;//r.nextInt();
 		packet.putInt(num);
 		packet.putInt(len);
 		packet.putInt(udpPort);
@@ -88,6 +93,52 @@ public class Server extends Thread {
 		this.sendData(packet.array(), address, port);
 		return new int[]{num, len, udpPort, secretA};
 	}
+	
+
+    public void openTCP(ServerSocket serverSocket) {
+        try{
+            tcpSocket = serverSocket.accept();
+            System.out.println("Opened TCP socket on port " + tcpSocket.getLocalPort());
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+    }
+
+    // Closes this server's TCP socket and sets it to null
+    public void closeTCP() {
+        try {
+            tcpSocket.close();
+            tcpSocket = null;
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+    }
+
+    public byte[] readTCP(int length) {
+        try {
+            byte[] response = new byte[length];
+            DataInputStream clientRead = new DataInputStream(tcpSocket.getInputStream());
+            clientRead.readFully(response);
+            return response;
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+            System.out.println("ERROR: TCP not read");
+            return null;
+        }
+    }
+
+    public void sendTCP(byte[] message) {
+        try {
+            //System.out.println("Sending TCP Packet (" + i + ")" + " (Port: " + tcpSocket.getPort() + ")");
+            //System.out.println(message.length);
+            //System.out.println("Packet: " + Arrays.toString(message));
+            DataOutputStream clientWrite = new DataOutputStream(tcpSocket.getOutputStream());
+            clientWrite.write(message);
+            clientWrite.flush();
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+    }
 
 
 	class Header {
